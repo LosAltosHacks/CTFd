@@ -9,12 +9,11 @@ from CTFd.utils.user import get_ip
 from CTFd.utils.uploads import upload_file, delete_file
 from CTFd.utils.modes import get_model
 from flask import Blueprint
-import math
 
 
 class LahChallengeClass(BaseChallenge):
     id = "lah"  # Unique identifier used to register challenges
-    name = "lah"  # Name of a challenge type
+    name = "lah unlocking"  # Name of a challenge type
     templates = {  # Handlebars templates used for each aspect of challenge editing & viewing
         'create': '/plugins/lah_challenges/assets/create.html',
         'update': '/plugins/lah_challenges/assets/update.html',
@@ -91,7 +90,6 @@ class LahChallengeClass(BaseChallenge):
             setattr(challenge, attr, value)
 
         if do_lock:
-            print("exece1")
             challenge.is_unlocked = False
         # for some reason challenge.unlock_order doesn't work here
         if int(data['unlock_order']) <= 0:
