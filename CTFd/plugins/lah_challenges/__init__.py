@@ -10,6 +10,14 @@ from CTFd.utils.uploads import upload_file, delete_file
 from CTFd.utils.modes import get_model
 from flask import Blueprint
 
+from CTFd.utils.dates import ctftime
+from sqlalchemy import func
+import logging
+import datetime
+import time
+from random import randrange
+import atexit
+from apscheduler.schedulers.background import BackgroundScheduler
 
 class LahChallengeClass(BaseChallenge):
     id = "lah"  # Unique identifier used to register challenges
@@ -201,8 +209,64 @@ class LahChallenge(Challenges):
         self.is_unlocked = int(kwargs['unlock_order']) == 0
 
 
+RAND_UNLOCK_MINUTES = [i for i in range(0, 60, 2)]
+RAND_UNLOCK_QUESTIONS = 1
+
+
+
+def log(logger, format, **kwargs):
+    logger = logging.getLogger(logger)
+    props = {
+        'date': time.strftime("%m/%d/%Y %X"),
+    }
+    props.update(kwargs)
+    msg = format.format(**props)
+    print(msg)
+    logger.info(msg)
+
+APP_REF = None
+
+def rand_unlock_callback():
+    with APP_REF.app_context():
+        if not ctftime():
+            log('lah', "[{date}] unlocking did not run because ctf has not started")
+            return
+        if datetime.datetime.now().minute not in RAND_UNLOCK_MINUTES:
+            log('lah', "[{date}] unlocking did not run because minute is not aligned")
+            return
+        for i in range(RAND_UNLOCK_QUESTIONS):
+            # Unlock one random question, that is visible, not unlocked, and of the lowest available unlock_order
+            min_order = db.session.query(
+                            func.min(LahChallenge.unlock_order).label("min_order"),
+                            func.count().label("count")
+                        ).filter(
+                            LahChallenge.state == "visible",
+                            LahChallenge.is_unlocked == False,
+                            LahChallenge.unlock_order > 0,
+                        ).one()
+            count = min_order.count
+            order = min_order.min_order
+            if not min_order or count == 0:
+                log('lah', "[{date}] unlocking finished early because no locked challenges were found.")
+                return
+            rand_offset = randrange(count)
+            challenge = LahChallenge.query.filter_by(unlock_order=order, is_unlocked=False, state="visible").order_by(LahChallenge.id).offset(rand_offset).first()
+            if not challenge:
+                log('lah', "[{date}] encountered invalid state: randomly selected challenge was None.")
+            challenge.is_unlocked = True
+            db.session.commit()
+            log('lah', "[{date}] unlocked challenge '{chal}'", chal=challenge.name)
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=rand_unlock_callback, trigger="interval", seconds=10)
+
+
 def load(app):
     # upgrade()
     app.db.create_all()
     CHALLENGE_CLASSES['lah'] = LahChallengeClass
     register_plugin_assets_directory(app, base_path='/plugins/lah_challenges/assets/')
+    global APP_REF
+    APP_REF = app
+    scheduler.start()
+    atexit.register(lambda: scheduler.shutdown())
