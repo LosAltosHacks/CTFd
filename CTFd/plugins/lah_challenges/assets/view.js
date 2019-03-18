@@ -32,14 +32,30 @@ window.challenge.submit = function (cb, preview) {
         'submission': submission
     };
 
-    CTFd.fetch(url, {
-        method: 'POST',
+    var wasCorrect = false;
+    var willRedirect = false;
+    CTFd.fetch("/api/v1/lah_challenges", {
+        method: 'GET',
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(params)
+        }
+    }).then(function (response) {
+        return response.json()
+    }).then(function (response) {
+        if (response && response.data.selected == challenge_id) {
+            willRedirect = true
+        }
+    }).then(function() {
+        return CTFd.fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(params)
+        });
     }).then(function (response) {
         if (response.status === 429) {
             // User was ratelimited but process response
@@ -51,6 +67,13 @@ window.challenge.submit = function (cb, preview) {
         }
         return response.json();
     }).then(function (response) {
+        wasCorrect = response.data.status == "correct"
         cb(response);
+    }).then(function () {
+        if (wasCorrect && willRedirect) {
+            setTimeout(function() {
+                $(location).attr('href', '/unlock')
+            }, 700)
+        }
     });
 };

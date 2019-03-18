@@ -334,7 +334,7 @@ def unlock_timeout_callback():
         db.session.commit()
         log('lah', "[{date}] unlocked challenge '{chal}' on timeout", chal=challenge.name)
 
-from CTFd.plugins import bypass_csrf_protection
+from CTFd.plugins import bypass_csrf_protection, register_user_page_menu_bar, register_plugin_script
 
 lah_print = Blueprint('lah_challenges', __name__, template_folder='templates', static_folder='assets', url_prefix="")
 
@@ -392,6 +392,43 @@ def unlock_reset():
     db.session.commit()
     return redirect(url_for('lah_challenges.lah_unlock'))
 
+## API for redirects and color
+
+from flask_restplus import Resource, Namespace
+from CTFd.utils.decorators import (
+    during_ctf_time_only,
+    require_verified_emails,
+)
+from CTFd.utils.decorators.visibility import (
+    check_challenge_visibility,
+)
+
+lah_challenges_namespace = Namespace('lah_challenges',
+                                 description="Endpoint to get info specific to lah challenges")
+
+@lah_challenges_namespace.route('')
+class LahChallengeInfo(Resource):
+    @check_challenge_visibility
+    @during_ctf_time_only
+    @require_verified_emails
+    def get(self):
+        response = {}
+        challenges = LahChallenge.query.filter_by(state="visible").all()
+
+        response['unlocked'] = {}
+        for challenge in challenges:
+            response['unlocked'][challenge.id] = challenge.is_unlocked
+
+        unlock = UnlockState.query.one()
+        response['selected'] = unlock.selected
+        db.session.close()
+        return {
+            'success': True,
+            'data': response
+        }
+
+from CTFd.api import CTFd_API_v1
+CTFd_API_v1.add_namespace(lah_challenges_namespace, '/lah_challenges')
 
 def load(app):
     # upgrade()
@@ -410,3 +447,5 @@ def load(app):
             db.session.commit()
 
     app.register_blueprint(lah_print)
+    register_user_page_menu_bar("Unlocking", "/unlock")
+    register_plugin_script("/plugins/lah_challenges/assets/lah_challenge_injector.js")
