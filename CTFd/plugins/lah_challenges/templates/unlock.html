@@ -9,8 +9,10 @@
 <div class="jumbotron">
     <div class="container">
         <h1 class="text-center">Unlock a challenge</h1>
-        <h2 class="text-center">Waiting for {{ unlocker_name }}.</h2>
+        <h2 class="text-center">Waiting for {{ waiting }}.</h2>
+        {% if countdown_end %}
         <h2 class="text-center" id="timer">&nbsp;</h2>
+        {% endif %}
     </div>
 </div>
 <div class="container">
@@ -43,6 +45,7 @@
 {% endblock %}
 
 {% block scripts %}
+    {% if countdown_end %}
     <script>
         var timerElem = $("#timer")
         var until = new Date({{ countdown_end | tojson }} * 1000)
@@ -51,6 +54,7 @@
             timerElem.text(Math.max(Math.round((until - now) / 1000), 0))
         }, 1000)
     </script>
+    {% endif %}
 	<script src="{{ url_for('views.themes', theme='core', path='js/hints.js') }}"></script>
 	<script src="{{ request.script_root }}{{ update_script }}"></script>
 {% endblock %}

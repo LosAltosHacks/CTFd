@@ -282,7 +282,6 @@ RAND_UNLOCK_JOB_ID = 'rand_unlock_job_id'
 
 scheduler = BackgroundScheduler()
 scheduler.add_jobstore(SQLAlchemyJobStore(engine=db.engine))
-scheduler.print_jobs()
 scheduler.add_job(func=rand_unlock_callback, trigger="interval", minutes=1, id=RAND_UNLOCK_JOB_ID, replace_existing=True)
 
 
@@ -363,12 +362,16 @@ def lah_unlock():
     unlockables = dict(LahChallenge.query.filter_by(is_unlocked=False, state="visible").with_entities(LahChallenge.id, LahChallenge.name).all())
     unlock = UnlockState.query.one()
     if unlock.unlocker_id:
-        waiting = "User " + db.session.query(Users.name).filter(Users.id==unlock.unlocker_id).scalar()
+        waiting = "user '" + db.session.query(Users.name).filter(Users.id==unlock.unlocker_id).scalar() + "'"
     else:
-        waiting = "Challenge " + db.session.query(LahChallenge.name).filter(LahChallenge.id==unlock.selected).scalar()
+        waiting = "challenge '" + db.session.query(LahChallenge.name).filter(LahChallenge.id==unlock.selected).scalar() + "'"
+    if unlock.expiration:
+        cdown = unlock.expiration.timestamp()
+    else:
+        cdown = None
     return render_template('unlock.html',
         challenges=unlockables,
-        countdown_end=unlock.expiration.timestamp(),
+        countdown_end=cdown,
         waiting=waiting,
         unlocker_id=unlock.unlocker_id,
         user_id=get_current_user().id,
@@ -383,7 +386,7 @@ def unlock_reset():
     with db.session.no_autoflush:
         unlock.selected = None
         unlock.unlocker_id = get_current_user().id
-        unlock.expiration = datetime.datetime.now() + datetime.timedelta(seconds = 5)
+        unlock.expiration = datetime.datetime.now() + datetime.timedelta(seconds = 30)
     print(unlock.expiration)
     scheduler.add_job(unlock_timeout_callback, DateTrigger(unlock.expiration), id=UNLOCK_TIMEOUT_JOB_ID, replace_existing=True, misfire_grace_time=99999999)
     db.session.commit()
