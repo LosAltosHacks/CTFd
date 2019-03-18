@@ -2,7 +2,7 @@ from __future__ import division  # Use floating point for math calculations
 from CTFd.plugins.challenges import BaseChallenge, CHALLENGE_CLASSES
 from CTFd.plugins import register_plugin_assets_directory
 from CTFd.plugins.flags import get_flag_class
-from CTFd.models import db, Solves, Fails, Flags, Challenges, ChallengeFiles, Tags, Teams, Hints
+from CTFd.models import db, Solves, Fails, Flags, Challenges, ChallengeFiles, Tags, Teams, Hints, Users
 from CTFd import utils
 from CTFd.utils.migrations import upgrade
 from CTFd.utils.user import get_ip
@@ -18,6 +18,16 @@ import time
 from random import randrange
 import atexit
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.date import DateTrigger
+from apscheduler.jobstores.base import JobLookupError
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+
+from CTFd.utils.decorators import (
+    during_ctf_time_only,
+    require_verified_emails,
+    admins_only,
+    authed_only
+)
 
 class LahChallengeClass(BaseChallenge):
     id = "lah"  # Unique identifier used to register challenges
@@ -161,6 +171,17 @@ class LahChallengeClass(BaseChallenge):
         chal = LahChallenge.query.filter_by(id=challenge.id).first()
         if not chal.is_unlocked:
             raise RuntimeError("Attempted to solve a locked lah challenge.")
+
+        # check if this is the selected solve
+        unlock = UnlockState.query.one()
+        if unlock.selected == challenge.id:
+            with db.session.no_autoflush:
+                unlock.selected = None
+                unlock.unlocker_id = user.id
+                unlock.expiration = datetime.datetime.now() + datetime.timedelta(minutes = 1)
+            scheduler.add_job(unlock_timeout_callback, DateTrigger(unlock.expiration), id=UNLOCK_TIMEOUT_JOB_ID, replace_existing=True, misfire_grace_time=999999999)
+            db.session.commit()
+
         data = request.form or request.get_json()
         submission = data['submission'].strip()
         solve = Solves(
@@ -209,10 +230,9 @@ class LahChallenge(Challenges):
         self.is_unlocked = int(kwargs['unlock_order']) == 0
 
 
-RAND_UNLOCK_MINUTES = [i for i in range(0, 60, 2)]
+# TODO implement a config for this
+RAND_UNLOCK_MINUTES = list(range(0, 60, 15))
 RAND_UNLOCK_QUESTIONS = 1
-
-
 
 def log(logger, format, **kwargs):
     logger = logging.getLogger(logger)
@@ -231,7 +251,7 @@ def rand_unlock_callback():
         if not ctftime():
             log('lah', "[{date}] unlocking did not run because ctf has not started")
             return
-        if datetime.datetime.now().minute not in RAND_UNLOCK_MINUTES:
+        if datetime.datetime.utcnow().minute not in RAND_UNLOCK_MINUTES:
             log('lah', "[{date}] unlocking did not run because minute is not aligned")
             return
         for i in range(RAND_UNLOCK_QUESTIONS):
@@ -257,8 +277,117 @@ def rand_unlock_callback():
             db.session.commit()
             log('lah', "[{date}] unlocked challenge '{chal}'", chal=challenge.name)
 
+UNLOCK_TIMEOUT_JOB_ID = 'time_out_job_id'
+RAND_UNLOCK_JOB_ID = 'rand_unlock_job_id'
+
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=rand_unlock_callback, trigger="interval", seconds=10)
+scheduler.add_jobstore(SQLAlchemyJobStore(engine=db.engine))
+scheduler.print_jobs()
+scheduler.add_job(func=rand_unlock_callback, trigger="interval", minutes=1, id=RAND_UNLOCK_JOB_ID, replace_existing=True)
+
+
+from flask import (
+    current_app as app,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    Blueprint,
+    abort,
+    render_template_string,
+    send_file
+)
+
+from CTFd.utils.user import get_current_user
+
+
+class UnlockState(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    selected = db.Column(db.Integer, db.ForeignKey('lah_challenge.id'), nullable=True, default=None)
+    unlocker_id = db.Column(None, db.ForeignKey('users.id'), nullable=True, default=1)
+    expiration = db.Column(db.DateTime, nullable=True, default=datetime.datetime.fromtimestamp(13569465600))
+
+    __table_args__ = (
+        db.CheckConstraint('(selected IS NULL) <> (unlocker_id IS NULL)'),
+        db.CheckConstraint('(expiration IS NULL) = (unlocker_id IS NULL)'),
+    )
+
+def unlock_timeout_callback():
+    with APP_REF.app_context():
+        count = db.session.query(LahChallenge).filter(
+                        LahChallenge.state == "visible",
+                        LahChallenge.is_unlocked == False
+                    ).count()
+        if count == 0:
+            log('lah', "[{date}] manual unlock timeout finished early because no locked challenges were found.")
+            return
+        rand_offset = randrange(count)
+        challenge = LahChallenge.query.filter_by(is_unlocked=False, state="visible").order_by(LahChallenge.id).offset(rand_offset).first()
+        if not challenge:
+            log('lah', "[{date}] encountered invalid state during manual unlock timeout: randomly selected challenge was None.")
+            return
+        challenge.is_unlocked = True
+        unlock = UnlockState.query.one()
+        with db.session.no_autoflush:
+            unlock.unlocker_id = None
+            unlock.expiration = None
+            unlock.selected = challenge.id
+        db.session.commit()
+        log('lah', "[{date}] unlocked challenge '{chal}' on timeout", chal=challenge.name)
+
+from CTFd.plugins import bypass_csrf_protection
+
+lah_print = Blueprint('lah_challenges', __name__, template_folder='templates', static_folder='assets', url_prefix="")
+
+@lah_print.route('/unlock', methods=['GET', 'POST'])
+@bypass_csrf_protection
+@authed_only
+def lah_unlock():
+    if request.method == 'POST':
+        unlock = UnlockState.query.one()
+        if get_current_user().id != unlock.unlocker_id:
+            abort(403)
+        challenge = LahChallenge.query.filter_by(id=request.form['unlock']).one_or_none()
+        if not challenge:
+            return redirect(url_for('lah_challenges.lah_unlock'))
+        challenge.is_unlocked = True
+        unlock.unlocker_id = None
+        unlock.expiration = None
+        unlock.selected = challenge.id
+        db.session.commit()
+        try:
+            scheduler.remove_job(UNLOCK_TIMEOUT_JOB_ID)
+        except JobLookupError:
+            pass
+        return redirect(url_for('challenges.listing'))
+    unlockables = dict(LahChallenge.query.filter_by(is_unlocked=False, state="visible").with_entities(LahChallenge.id, LahChallenge.name).all())
+    unlock = UnlockState.query.one()
+    if unlock.unlocker_id:
+        waiting = "User " + db.session.query(Users.name).filter(Users.id==unlock.unlocker_id).scalar()
+    else:
+        waiting = "Challenge " + db.session.query(LahChallenge.name).filter(LahChallenge.id==unlock.selected).scalar()
+    return render_template('unlock.html',
+        challenges=unlockables,
+        countdown_end=unlock.expiration.timestamp(),
+        waiting=waiting,
+        unlocker_id=unlock.unlocker_id,
+        user_id=get_current_user().id,
+    )
+
+@lah_print.route('/admin/unlock_reset', methods=['GET'])
+@bypass_csrf_protection
+@admins_only
+@authed_only
+def unlock_reset():
+    unlock = UnlockState.query.one()
+    with db.session.no_autoflush:
+        unlock.selected = None
+        unlock.unlocker_id = get_current_user().id
+        unlock.expiration = datetime.datetime.now() + datetime.timedelta(seconds = 5)
+    print(unlock.expiration)
+    scheduler.add_job(unlock_timeout_callback, DateTrigger(unlock.expiration), id=UNLOCK_TIMEOUT_JOB_ID, replace_existing=True, misfire_grace_time=99999999)
+    db.session.commit()
+    return redirect(url_for('lah_challenges.lah_unlock'))
 
 
 def load(app):
@@ -270,3 +399,11 @@ def load(app):
     APP_REF = app
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown())
+
+    # Insert data if it doesnt already exist
+    with app.app_context():
+        if UnlockState.query.count() <= 0:
+            db.session.add(UnlockState(id=1))
+            db.session.commit()
+
+    app.register_blueprint(lah_print)
