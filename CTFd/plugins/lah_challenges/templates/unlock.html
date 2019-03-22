@@ -16,9 +16,9 @@
     </div>
 </div>
 <div class="container">
-    {% if unlocker_id == user_id %}
     <div class="row">
-        <div class="col-md-6 col-md-offset-3">
+        <div class="col-md-6" style="margin-left: auto; margin-right:auto">
+            {% if unlocker_id == user_id %}
             <h2 class="text-center">It's your turn. The clock is ticking.</h2>
             <form id="unlock-lah-form" method="post" action="#">
                 <div class="form-group">
@@ -33,13 +33,12 @@
                     <input type="submit" class="btn btn-success float-right" value="Unlock">
                 </div>
             </form>
+            {% endif %}
+            <a href="{{ url_for('lah_challenges.unlock_reset') }}">
+                <small class="text-muted">Admin unlock override.</small>
+            </a>
         </div>
     </div>
-
-    {% endif %}
-    <a href="{{ url_for('lah_challenges.unlock_reset') }}">
-        <small class="text-muted">Admin unlock override.</small>
-    </a>
 </div>
 
 {% endblock %}
