@@ -43,4 +43,5 @@ exec gunicorn 'CTFd:create_app()' \
     --workers $WORKERS \
     --worker-class "$WORKER_CLASS" \
     --access-logfile "$ACCESS_LOG" \
-    --error-logfile "$ERROR_LOG"
+    --error-logfile "$ERROR_LOG" \
+    --preload
