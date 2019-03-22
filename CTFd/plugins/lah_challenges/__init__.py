@@ -299,8 +299,11 @@ def rand_unlock_callback():
 UNLOCK_TIMEOUT_JOB_ID = 'time_out_job_id'
 RAND_UNLOCK_JOB_ID = 'rand_unlock_job_id'
 
-scheduler = BackgroundScheduler()
-scheduler.add_jobstore(SQLAlchemyJobStore(engine=db.engine))
+# Currently this breaks with multiple workers, --preload on gunicorn fixes it
+# See https://stackoverflow.com/questions/16053364/make-sure-only-one-worker-launches-the-apscheduler-event-in-a-pyramid-web-app-ru
+# TODO look into Flask-APscheduler
+scheduler = BackgroundScheduler(
+    jobstores={'default': SQLAlchemyJobStore(engine=db.engine)})
 scheduler.add_job(func=rand_unlock_callback, trigger="interval", minutes=1, id=RAND_UNLOCK_JOB_ID, replace_existing=True)
 
 
