@@ -5,7 +5,7 @@ services:
     build: .
     restart: always
     ports:
-      - "8000:8000"
+      - "80:8000"
     environment:
       - UPLOAD_FOLDER=/var/uploads
       - DATABASE_URL=mysql+pymysql://root:ctfd@db/ctfd
@@ -14,6 +14,7 @@ services:
       - LOG_FOLDER=/var/log/CTFd
       - ACCESS_LOG=-
       - ERROR_LOG=-
+      - TZ=UTC
     volumes:
       - .data/CTFd/logs:/var/log/CTFd
       - .data/CTFd/uploads:/var/uploads
