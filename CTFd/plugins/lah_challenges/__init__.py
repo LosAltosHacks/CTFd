@@ -368,6 +368,11 @@ from CTFd.plugins import bypass_csrf_protection, register_user_page_menu_bar, re
 
 lah_print = Blueprint('lah_challenges', __name__, template_folder='templates', static_folder='assets', url_prefix="")
 
+
+import time as mod_time
+def unix_time(timestamp):
+    mod_time.mktime(timestamp.timetuple()) + timestamp.microsecond / 1e6
+
 @lah_print.route('/unlock', methods=['GET', 'POST'])
 @bypass_csrf_protection
 @authed_only
@@ -396,7 +401,7 @@ def lah_unlock():
     else:
         waiting = "challenge '" + db.session.query(LahChallenge.name).filter(LahChallenge.id==unlock.selected).scalar() + "'"
     if unlock.expiration:
-        cdown = unlock.expiration.timestamp()
+        cdown = unix_time(unlock.expiration)
     else:
         cdown = None
     return render_template('unlock.html',
