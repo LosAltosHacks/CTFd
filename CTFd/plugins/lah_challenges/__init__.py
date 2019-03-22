@@ -15,6 +15,7 @@ from sqlalchemy import func
 import logging
 import datetime
 import time
+import os
 from random import randrange
 import atexit
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -244,6 +245,24 @@ def log(logger, format, **kwargs):
     print(msg)
     logger.info(msg)
 
+def init_logs(app):
+    logger_lah = logging.getLogger('lah')
+    logger_lah.setLevel(logging.INFO)
+    log_dir = app.config['LOG_FOLDER']
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    logs = {
+        'lah': os.path.join(log_dir, 'lah.log'),
+    }
+    for log in logs.values():
+        if not os.path.exists(log):
+            open(log, 'a').close()
+    lah_log = logging.handlers.RotatingFileHandler(logs['lah'], maxBytes=10000)
+    logger_lah.addHandler(
+        lah_log
+    )
+    logger_lah.propagate = 0
+
 APP_REF = None
 
 def rand_unlock_callback():
@@ -443,6 +462,7 @@ def load(app):
     app.db.create_all()
     CHALLENGE_CLASSES['lah'] = LahChallengeClass
     register_plugin_assets_directory(app, base_path='/plugins/lah_challenges/assets/')
+    init_logs(app)
     global APP_REF
     APP_REF = app
     scheduler.start()
