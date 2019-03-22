@@ -371,7 +371,7 @@ lah_print = Blueprint('lah_challenges', __name__, template_folder='templates', s
 
 import time as mod_time
 def unix_time(timestamp):
-    mod_time.mktime(timestamp.timetuple()) + timestamp.microsecond / 1e6
+    return mod_time.mktime(timestamp.timetuple()) + timestamp.microsecond / 1e6
 
 @lah_print.route('/unlock', methods=['GET', 'POST'])
 @bypass_csrf_protection
