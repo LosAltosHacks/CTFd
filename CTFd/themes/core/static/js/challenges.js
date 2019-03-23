@@ -250,7 +250,7 @@ function loadchals(cb) {
                     '</div>');
                 categoryrow.find(".category-header").append($("<h3>" + category + "</h3>"));
 
-                $('#challenges-board').append(categoryrow);
+                $('#challenges-board').prepend(categoryrow);
             }
         }
 
