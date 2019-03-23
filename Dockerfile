@@ -1,6 +1,6 @@
-FROM python:3.6-alpine
+FROM python:3.5-alpine
 RUN apk update && \
-    apk add python python-dev linux-headers libffi-dev gcc make musl-dev py-pip mysql-client git openssl-dev
+    apk add python3 python3-dev linux-headers libffi-dev gcc make musl-dev py3-pip mysql-client git openssl-dev
 
 WORKDIR /opt/CTFd
 RUN mkdir -p /opt/CTFd
