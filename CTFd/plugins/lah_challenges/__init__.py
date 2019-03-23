@@ -232,8 +232,8 @@ class LahChallenge(Challenges):
 
 
 # TODO implement a config for this
-RAND_UNLOCK_MINUTES = list(range(0, 60, 15))
-RAND_UNLOCK_QUESTIONS = 1
+RAND_UNLOCK_MINUTES = list(range(0, 60, 10))
+RAND_UNLOCK_QUESTIONS = 3
 
 def log(logger, format, **kwargs):
     logger = logging.getLogger(logger)
