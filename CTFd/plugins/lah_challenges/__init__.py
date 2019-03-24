@@ -277,14 +277,17 @@ def rand_unlock_callback():
             # Unlock one random question, that is visible, not unlocked, and of the lowest available unlock_order
             min_order = db.session.query(
                             func.min(LahChallenge.unlock_order).label("min_order"),
-                            func.count().label("count")
                         ).filter(
                             LahChallenge.state == "visible",
                             LahChallenge.is_unlocked == False,
                             LahChallenge.unlock_order > 0,
                         ).one()
-            count = min_order.count
             order = min_order.min_order
+            count = db.session.query(LahChallenge).filter(
+                        LahChallenge.state == "visible",
+                        LahChallenge.is_unlocked == False,
+                        LahChallenge.unlock_order == order,
+                    ).count()
             if not min_order or count == 0:
                 log('lah', "[{date}] unlocking finished early because no locked challenges were found.")
                 return
